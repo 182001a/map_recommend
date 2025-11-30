@@ -1,0 +1,9 @@
+# ビルド & 起動
+docker compose build
+docker compose up -d
+
+# マイグレーション
+docker compose exec web python manage.py migrate
+
+# サンプルデータ投入
+docker compose exec web python manage.py create_sample_data
