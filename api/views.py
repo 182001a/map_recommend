@@ -3,13 +3,17 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
+from rest_framework.parsers import MultiPartParser, FormParser
 
-from .models import CourseTemplate, CourseMode
+from .models import CourseTemplate, CourseMode, WalkSession, WalkSpotVisit, WalkPhoto
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
     CourseTemplateSerializer,
     CourseModeSerializer,
+    WalkSessionSerializer,
+    WalkSpotVisitSerializer,
+    WalkPhotoSerializer,
 )
 
 
@@ -133,3 +137,88 @@ class CourseTemplateListCreateView(generics.ListCreateAPIView):
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
+
+class WalkSessionListCreateView(generics.ListCreateAPIView):
+    """
+    GET: 自分の散歩セッション一覧
+    POST: 散歩開始（WalkSession 作成）
+    """
+
+    serializer_class = WalkSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return WalkSession.objects.filter(user=self.request.user).order_by("-started_at")
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["request"] = self.request
+        return ctx
+    
+class WalkSessionFinishView(APIView):
+    """
+    POST /api/walk-sessions/<id>/finish/
+
+    Body:
+      {
+        "ended_at": "...",
+        "total_distance_m": 1234,
+        "total_duration_sec": 3600
+      }
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            session = WalkSession.objects.get(pk=pk, user=request.user)
+        except WalkSession.DoesNotExist:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        data = {
+            "ended_at": request.data.get("ended_at"),
+            "total_distance_m": request.data.get("total_distance_m"),
+            "total_duration_sec": request.data.get("total_duration_sec"),
+        }
+        serializer = WalkSessionSerializer(
+            session, data=data, partial=True, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class WalkSpotVisitCreateView(generics.CreateAPIView):
+    """
+    POST /api/walk-sessions/<session_id>/spot-visits/
+    """
+
+    serializer_class = WalkSpotVisitSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        session_id = self.kwargs["session_id"]
+        try:
+            session = WalkSession.objects.get(pk=session_id, user=self.request.user)
+        except WalkSession.DoesNotExist:
+            raise permissions.PermissionDenied("このセッションは存在しないか、あなたのものではありません。")
+
+        serializer.save(session=session)
+
+class WalkPhotoCreateView(generics.CreateAPIView):
+    """
+    POST /api/walk-sessions/<session_id>/photos/
+    multipart/form-data で画像を送信
+    """
+
+    serializer_class = WalkPhotoSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def perform_create(self, serializer):
+        session_id = self.kwargs["session_id"]
+        try:
+            session = WalkSession.objects.get(pk=session_id, user=self.request.user)
+        except WalkSession.DoesNotExist:
+            raise permissions.PermissionDenied("このセッションは存在しないか、あなたのものではありません。")
+
+        serializer.save(session=session)

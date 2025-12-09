@@ -6,6 +6,9 @@ from .models import (
     CourseTemplate,
     CourseSpotTemplate,
     CourseMode,
+    WalkSession,
+    WalkSpotVisit,
+    WalkPhoto,
 )
 
 
@@ -129,3 +132,70 @@ class CourseTemplateSerializer(serializers.ModelSerializer):
             CourseSpotTemplate.objects.create(course=course, **spot)
 
         return course
+
+class WalkPhotoSerializer(serializers.ModelSerializer):
+    """写真ログ"""
+
+    class Meta:
+        model = WalkPhoto
+        fields = [
+            "id",
+            "session",
+            "spot_visit",
+            "image",
+            "taken_at",
+            "lat",
+            "lng",
+            "caption",
+            "created_at",
+        ]
+        read_only_fields = ["id", "session", "created_at"]
+
+
+class WalkSpotVisitSerializer(serializers.ModelSerializer):
+    """スポット滞在ログ"""
+
+    class Meta:
+        model = WalkSpotVisit
+        fields = [
+            "id",
+            "session",
+            "course_spot_template",
+            "name",
+            "place_id",
+            "lat",
+            "lng",
+            "arrived_at",
+            "left_at",
+            "stay_duration_sec",
+            "created_at",
+        ]
+        read_only_fields = ["id", "session", "created_at"]
+
+
+class WalkSessionSerializer(serializers.ModelSerializer):
+    """散歩セッション本体"""
+
+    # 今はネストをシンプルにしたいので、詳細は別エンドポイントで取る想定
+    class Meta:
+        model = WalkSession
+        fields = [
+            "id",
+            "user",
+            "course_template",
+            "started_at",
+            "ended_at",
+            "total_distance_m",
+            "total_duration_sec",
+            "notes",
+            "created_at",
+        ]
+        read_only_fields = ["id", "user", "created_at"]
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        user = request.user if request else None
+        if user is None or user.is_anonymous:
+            raise serializers.ValidationError("ログインユーザーが必要です。")
+        validated_data["user"] = user
+        return super().create(validated_data)
