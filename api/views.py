@@ -1,5 +1,6 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.views import APIView
+from django.db.models import Q
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
@@ -7,6 +8,15 @@ from django.contrib.auth import authenticate
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
+    CourseTemplateSerializer,
+    WalkSessionSerializer,
+    UserPrivacyMaskSerializer
+)
+from .models import (
+    CustomUser,
+    CourseTemplate,
+    WalkSession,
+    UserPrivacyMask
 )
 
 
@@ -64,3 +74,52 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+# 1. コーステンプレート（計画・提案）
+class CourseTemplateViewSet(viewsets.ModelViewSet):
+    """
+    AI提案またはユーザー保存のコーステンプレート
+    """
+    serializer_class = CourseTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 「自分のもの」または「公開されているもの」を表示
+        user = self.request.user
+        return CourseTemplate.objects.filter(
+            Q(user=user) | Q(is_public=True)
+        ).distinct()
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+# 2. 散歩ログ（実績）
+class WalkSessionViewSet(viewsets.ModelViewSet):
+    """
+    実際の歩行ログの記録
+    """
+    serializer_class = WalkSessionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        # 自分のログのみ（セキュリティ担保）
+        return WalkSession.objects.filter(user=self.request.user).order_by('-start_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+# 3. プライバシーエリア設定
+class UserPrivacyMaskViewSet(viewsets.ModelViewSet):
+    """
+    自宅周辺などの非公開エリア設定
+    """
+    serializer_class = UserPrivacyMaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return UserPrivacyMask.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
